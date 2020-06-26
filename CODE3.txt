@@ -1,0 +1,38 @@
+#importing modules
+import cv2
+import requests
+import io
+import json5
+
+#reading image
+img=cv2.imread("test1.png",1)
+
+#cutting image
+print(img.shape)
+h,w,_=img.shape
+x=img[40:h-45,20:w-20]
+
+#running ocr
+url="https://api.ocr.space/parse/image"
+
+#image compression
+_,compression=cv2.imencode(".png",x,[1,90])
+file_bytes=io.BytesIO(compression)
+
+#calling API
+result=requests.post(url,
+                     files={"bwimg.jpg":file_bytes},
+                     data={"apikey":"179e503d2788957"})
+result=result.content.decode()
+result=json5.loads(result)
+print(result)
+
+#extracting required text from result
+text_detected=result.get("ParsedResults")[0].get("ParsedText")
+print(text_detected)
+cv2.imshow("cutimage",x)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+cv2.imshow("original",img)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
