@@ -1,0 +1,44 @@
+Microsoft Windows [Version 10.0.18362.900]
+(c) 2019 Microsoft Corporation. All rights reserved.
+
+(base) C:\Users\HP\PycharmProjects\OpenCV_Examples>python EAST.py --image test2.png --east frozen_east_text_detection.pb
+[INFO] loading EAST text detector...
+[INFO] text detection took 0.424861 seconds
+***********
+Every
+
+***********
+day
+
+***********
+be
+
+***********
+Telelelel
+
+***********
+not
+
+***********
+may
+
+***********
+it there is
+
+***********
+something
+
+***********
+Felelelen
+
+***********
+7 every
+
+***********
+day.
+
+***********
+ice Morse Earle
+
+
+(base) C:\Users\HP\PycharmProjects\OpenCV_Examples>

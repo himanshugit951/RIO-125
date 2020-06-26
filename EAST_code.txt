@@ -1,0 +1,204 @@
+#importing modules
+import numpy as np
+import pytesseract as tess
+import cv2
+import argparse as arg
+import time
+from imutils.object_detection import non_max_suppression
+
+#add tesseract.exe path
+tess.pytesseract.tesseract_cmd=r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
+
+# construct the argument parser and parse the arguments
+ap = arg.ArgumentParser()
+ap.add_argument("-i", "--image", type=str,
+                help="path to input image")
+ap.add_argument("-east", "--east", type=str,
+                help="path to input EAST text detector")
+ap.add_argument("-c", "--min-confidence", type=float, default=0.5,
+                help="minimum probability required to inspect a region")
+ap.add_argument("-w", "--width", type=int, default=320,
+                help="resized image width (should be multiple of 32)")
+ap.add_argument("-e", "--height", type=int, default=320,
+                help="resized image height (should be multiple of 32)")
+ap.add_argument("-p", "--padding", type=float, default=0.0,
+                help="amount of padding to add to each border of ROI.")
+args = vars(ap.parse_args())
+
+# loading input image and grabbing image dimensions
+img = cv2.imread(args["image"])
+orig = img.copy()
+(origH, origW) = img.shape[:2]
+
+# set the new w and h and calc ratio in change for
+# both width and height.
+
+(newW, newH) = (args["width"], args["height"])
+rH = origH / float(newH)
+rW = origW / float(newW)
+
+# resize the image and grab new image dimensions.
+img = cv2.resize(img, (newW, newH))
+(H, W) = img.shape[:2]
+
+# define the two output layer names for EAST detector model
+# that we are interested--the first is the o/p prob and the
+# second can be used to derive the bounding box coordinatesof text.
+
+
+layernames = [
+    "feature_fusion/Conv_7/Sigmoid",
+    "feature_fusion/concat_3"]
+# Now we load the pre-trained EAST text detector
+
+print("[INFO] loading EAST text detector...")
+net = cv2.dnn.readNet(args["east"])
+
+# construct a blob from the image and then perform a forward pass of
+# the model to obtain the two output layer sets
+
+blob = cv2.dnn.blobFromImage(img, 1.0, (W, H),
+                             (123.68, 116.78, 103.94),
+                             swapRB=True, crop=False)
+
+start = time.time()
+net.setInput(blob)
+
+(scores, geo) = net.forward(layernames)
+end = time.time()
+
+# show timing information on text prediction
+print("[INFO] text detection took {:.6f} seconds".format(end - start))
+
+
+# scores are probabilities to create bounding boxes.
+def decode_predictions(scores, geo):
+    nrows, ncols = scores.shape[2:4]
+    rects = []
+    confidences = []
+    # looping in all rows one by one.
+    for y in range(0, nrows):
+        # extracting scores and then using it for bounding boxes.
+        scoresdata = scores[0, 0, y]
+        xdata0 = geo[0, 0, y]
+        xdata1 = geo[0, 1, y]
+        xdata2 = geo[0, 2, y]
+        xdata3 = geo[0, 3, y]
+        anglesdata = geo[0, 4, y]
+
+        # now looping over number of columns
+        for x in range(0, ncols):
+            # if score does not have sufficient probability
+            # ignore it
+            if scoresdata[x] < args["min_confidence"]:
+                continue
+            # calculate offset factor
+            # maps will be 4x smaller than the original image.
+            (offsetx, offsety) = (x * 4.0, y * 4.0)
+
+            # extract the rotation angle for prediction and
+            # then compute the sin and cosine.
+            angle = anglesdata[x]
+            cos = np.cos(angle)
+            sin = np.sin(angle)
+
+            # use the geo volume to calc width and height
+            # of the bounding box
+
+            h = xdata0[x] + xdata2[x]
+            w = xdata1[x] + xdata3[x]
+
+            # calculation of starting and ending coordinates.
+            # for the bounding box
+            endx = int(offsetx + (cos * xdata1[x]) + (sin * xdata2[x]))
+            endy = int(offsety - (sin * xdata1[x]) + (cos * xdata2[x]))
+            startx = int(endx - w)
+            starty = int(endy - h)
+
+            # Now we add the boyunding box coordinatesand
+            # probability score to our list.
+            rects.append((startx, starty, endx, endy))
+            confidences.append(scoresdata[x])
+
+    # return a tuple of the bounding boxes and associated confidences
+    return (rects, confidences)
+
+
+# decode the predictions,then apply non-maxima suppression to
+# suppress weak,overlapping bounding boxes
+
+(rects, confidences) = decode_predictions(scores, geo)
+boxes = non_max_suppression(np.array(rects), probs=confidences)
+
+# initialize the list of results
+results = []
+
+# loop over the bounding boxes
+for (startx, starty, endx, endy) in boxes:
+    # scale the bounding box coordinates based on the respective ratios
+    startx = int(startx * rW)
+    starty = int(starty * rH)
+    endx = int(endx * rW)
+    endy = int(endy * rH)
+
+    # we apply padding on bounding boxes for better ocr
+    # so we compute the deltas in both x and y directions
+
+    dx = int((endx - startx) * args["padding"])
+    dy = int((endy - starty) * args["padding"])
+
+    # apply padding to each side of the bounding box
+    startx = max(0, startx - dx)
+    starty = max(0, starty - dy)
+    endx = min(origW, endx + (dx * 2))
+    endy = min(origH, endy + (dy * 2))
+
+    # extracting the actual padded ROI
+
+    roi = orig[starty:endy, startx:endx]
+
+    # in order to apply tesseract v4 to ocr text we must supply
+    # lang,OEM flag of 4-we are using LSTM NN model for OCR,OEM VALUE
+    # -(7)indicating we are treating ROI as single line of text
+
+    config = ("-l eng --oem 1 --psm 7")
+    text = tess.image_to_string(roi, config=config)
+    # add the bounding box coordinates and ocr text to the
+    # list of results.
+    results.append(((startx, starty, endx, endy), text))
+
+# sort the results bounding box coordinates from top to bottom
+# blob func
+
+results = sorted(results, key=lambda r: r[0][1])
+
+# loop over the results
+
+for ((startx, starty, endx, endy), text) in results:
+    # display the text OCR'd by tess
+    #print("OCR TEXT")
+    print("***********")
+    print("{}\n".format(text))
+
+    # strip out non-ascii text so we can draw the text on the image
+    # using openCV and then draw the text and bounding box surrounding
+    # the text region of the inp img.
+    text = "".join([c if ord(c) < 128 else "" for c in text]).strip()
+    output = orig.copy()
+    cv2.rectangle(output, (startx, starty), (endx, endy),
+                  (0, 0, 255), 2)
+
+    cv2.putText(output, text, (startx, starty -15),
+                cv2.FONT_HERSHEY_PLAIN, 1.2, (0, 0,255), 3)
+    # SHOW THE OUTPUT IMAGE
+    cv2.imshow("Text Detection", output)
+    cv2.waitKey(0)
+
+    # cv2.destroyAllWindows()
+
+# type in cmd < python (SUCC)EAST.py --image .jpg --east frozen_east_text_detection.pb>
+
+
+
+
+
