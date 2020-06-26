@@ -10,6 +10,8 @@ iii.Pytesseract+OpenCV
 
 iv. EAST algorithm
 
+v.  HTR using pytess+openCV
+
 -download frozen_east_text_detection.pb for EAST.
 (https://www.kaggle.com/yelmurat/frozen-east-text-detection)
 
