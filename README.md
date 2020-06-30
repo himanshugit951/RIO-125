@@ -14,5 +14,6 @@ v.  HTR using Pytesseract+OpenCV
 
 -download frozen_east_text_detection.pb for EAST.
 (https://www.kaggle.com/yelmurat/frozen-east-text-detection)
+
 Read the link for detailed description:
 https://github.com/NanoNets/ocr-with-tesseract
